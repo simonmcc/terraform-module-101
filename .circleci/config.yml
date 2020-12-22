@@ -20,6 +20,7 @@ jobs:
     working_directory: /home/circleci/go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
     steps:
       - checkout
+      - run: mkdir -p /tmp/logs
 
       # specify any bash command here prefixed with `run: `
       - run: wget https://releases.hashicorp.com/terraform/0.12.29/terraform_0.12.29_linux_amd64.zip ; unzip terraform_0.12.29_linux_amd64.zip ; mv terraform ~/go/bin/
