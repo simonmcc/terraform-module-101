@@ -23,10 +23,15 @@ jobs:
       - run: mkdir -p /tmp/logs
 
       # specify any bash command here prefixed with `run: `
-      - run: wget https://releases.hashicorp.com/terraform/0.12.29/terraform_0.12.29_linux_amd64.zip ; unzip terraform_0.12.29_linux_amd64.zip ; mv terraform ~/go/bin/
-      - run: curl -LsS https://raw.githubusercontent.com/gruntwork-io/gruntwork-installer/master/bootstrap-gruntwork-installer.sh | bash /dev/stdin --version ${GRUNTWORK_INSTALLER_VERSION}
+      - run:
+          command: |
+            wget https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip && \
+            unzip terraform_${TERRAFORM_VERSION}_linux_amd64.zip ; mv terraform ~/go/bin/
+      - run:
+          command: |
+            curl -LsS https://raw.githubusercontent.com/gruntwork-io/gruntwork-installer/master/bootstrap-gruntwork-installer.sh \
+            | bash /dev/stdin --version ${GRUNTWORK_INSTALLER_VERSION}
       - run: gruntwork-install --binary-name 'terratest_log_parser' --repo 'https://github.com/gruntwork-io/terratest' --tag ${TERRATEST_VERSION}
-      - run: cd tests ; go get -v -t -d ./...
       - run: cd tests ; go test -v ./... | tee /tmp/logs/test_output.log
       - run: cd tests ; terratest_log_parser -testlog /tmp/logs/test_output.log -outputdir /tmp/logs
 
