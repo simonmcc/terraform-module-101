@@ -16,5 +16,6 @@ jobs:
 
       # specify any bash command here prefixed with `run: `
       - run: wget https://releases.hashicorp.com/terraform/0.12.29/terraform_0.12.29_linux_amd64.zip ; unzip terraform_0.12.29_linux_amd64.zip ; mv terraform ~/go/bin/
+      - run: gruntwork-install --binary-name 'terratest_log_parser' --repo 'https://github.com/gruntwork-io/terratest' --tag 'v0.12.29'
       - run: cd tests ; go get -v -t -d ./...
       - run: cd tests ; go test -v ./...
