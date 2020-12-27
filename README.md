@@ -27,3 +27,11 @@ No provider.
 | msg | n/a |
 
 <!-- END OF PRE-COMMIT-TERRAFORM DOCS HOOK -->
+
+# Development Setup
+
+The `setup_macos` Makefile target should install any required dependencies on macOS:
+
+```bash
+make setup_macos
+```

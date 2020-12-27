@@ -1,0 +1,43 @@
+env: &env
+  environment:
+    GRUNTWORK_INSTALLER_VERSION: v0.0.30
+    TERRATEST_VERSION: v0.31.2
+    TERRAFORM_VERSION: 0.12.29
+
+version: 2.1
+jobs:
+  build:
+    <<: *env
+    docker:
+      # specify the version
+      - image: cimg/go:1.15
+
+      # Specify service dependencies here if necessary
+      # CircleCI maintains a library of pre-built images
+      # documented at https://circleci.com/docs/2.0/circleci-images/
+      # - image: circleci/postgres:9.4
+
+    working_directory: /home/circleci/go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
+    steps:
+      - checkout
+      - run: mkdir -p /tmp/logs
+
+      # specify any bash command here prefixed with `run: `
+      - run:
+          command: |
+            wget https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip && \
+            unzip terraform_${TERRAFORM_VERSION}_linux_amd64.zip ; mv terraform ~/go/bin/
+      - run:
+          command: |
+            curl -LsS https://raw.githubusercontent.com/gruntwork-io/gruntwork-installer/master/bootstrap-gruntwork-installer.sh \
+            | bash /dev/stdin --version ${GRUNTWORK_INSTALLER_VERSION}
+      - run: gruntwork-install --binary-name 'terratest_log_parser' --repo 'https://github.com/gruntwork-io/terratest' --tag ${TERRATEST_VERSION}
+      - run: cd tests ; go get -v -t -d ./...
+      - run: cd tests ; go test -v ./... | tee /tmp/logs/test_output.log
+      - run: cd tests ; terratest_log_parser -testlog /tmp/logs/test_output.log -outputdir /tmp/logs
+
+      # Store test result and log artifacts for browsing purposes
+      - store_artifacts:
+          path: /tmp/logs
+      - store_test_results:
+          path: /tmp/logs
