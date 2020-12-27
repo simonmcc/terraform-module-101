@@ -80,7 +80,7 @@ jobs:
       - run: ls -la ~/.local/bin || true
       - run: ls -la /usr/local/bin/
 
-  test:
+  lint:
     <<: *env
     executor: linuxgo
     working_directory: /home/circleci/go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
@@ -88,7 +88,18 @@ jobs:
       - checkout
       - with_job_span:
           steps:      
-            - run: mkdir -p /tmp/logs
+            - run: buildevents cmd $CIRCLE_WORKFLOW_ID $STEP_SPAN_ID terraform-lint -- terraform fmt -diff -check -recursive
+            - run: buildevents cmd $CIRCLE_WORKFLOW_ID $STEP_SPAN_ID terraform-lint -- terraform validate
+
+  test:
+    <<: *env
+    executor: linuxgo
+    working_directory: /home/circleci/go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
+    steps:
+      - checkout
+      - run: mkdir -p /tmp/logs
+      - with_job_span:
+          steps:      
             - run: cd tests ; go get -v -t -d ./...
             - run: cd tests ; buildevents cmd $CIRCLE_WORKFLOW_ID $STEP_SPAN_ID go-tests -- go test -v ./... | tee /tmp/logs/test_output.log
             - run: cd tests ; terratest_log_parser -testlog /tmp/logs/test_output.log -outputdir /tmp/logs
@@ -106,9 +117,12 @@ workflows:
       - info:
           requires:
             - setup
-      - send_trace:
+      - lint:
           requires:
             - setup
       - test:
+          requires:
+            - setup
+      - send_trace:
           requires:
             - setup
