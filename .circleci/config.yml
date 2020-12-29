@@ -129,9 +129,6 @@ workflows:
       - lint:
           requires:
             - setup
-      - lint2:
-          requires:
-            - setup
       - test:
           requires:
             - setup
