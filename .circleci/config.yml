@@ -5,39 +5,133 @@ env: &env
     TERRAFORM_VERSION: 0.12.29
 
 version: 2.1
-jobs:
-  build:
-    <<: *env
+
+executors:
+  linuxgo:
     docker:
-      # specify the version
       - image: cimg/go:1.15
 
-      # Specify service dependencies here if necessary
-      # CircleCI maintains a library of pre-built images
-      # documented at https://circleci.com/docs/2.0/circleci-images/
-      # - image: circleci/postgres:9.4
-
-    working_directory: /home/circleci/go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
+commands:
+  with_job_span:
+    parameters:
+      steps:
+        type: steps
     steps:
-      - checkout
-      - run: mkdir -p /tmp/logs
+      - attach_workspace:
+          at: ~/bin
+      - run:
+          name: starting span for job
+          command: |
+            echo "STEP_START=$(date +%s)" >> $BASH_ENV
+            echo "STEP_SPAN_ID=$(echo $CIRCLE_JOB | sum | cut -f 1 -d \ )" >> $BASH_ENV
+      - steps: << parameters.steps >>
+      - run:
+          name: finishing span for job
+          command: buildevents step $CIRCLE_WORKFLOW_ID $STEP_SPAN_ID $STEP_START $CIRCLE_JOB
+          when: always
 
-      # specify any bash command here prefixed with `run: `
+jobs:
+  setup:
+    <<: *env
+    executor: linuxgo
+    steps:
+      - run: |
+          pwd
+          mkdir ~/bin || true
+          date +%s > ~/bin/build_start
+      - run: curl -L -o ~/bin/buildevents https://github.com/honeycombio/buildevents/releases/latest/download/buildevents-linux-amd64
+      - run: chmod 755 ~/bin/buildevents
       - run:
           command: |
             wget https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip && \
-            unzip terraform_${TERRAFORM_VERSION}_linux_amd64.zip ; mv terraform ~/go/bin/
+            unzip terraform_${TERRAFORM_VERSION}_linux_amd64.zip ; mv terraform ~/bin/
       - run:
           command: |
             curl -LsS https://raw.githubusercontent.com/gruntwork-io/gruntwork-installer/master/bootstrap-gruntwork-installer.sh \
             | bash /dev/stdin --version ${GRUNTWORK_INSTALLER_VERSION}
-      - run: gruntwork-install --binary-name 'terratest_log_parser' --repo 'https://github.com/gruntwork-io/terratest' --tag ${TERRATEST_VERSION}
-      - run: cd tests ; go get -v -t -d ./...
-      - run: cd tests ; go test -v ./... | tee /tmp/logs/test_output.log
-      - run: cd tests ; terratest_log_parser -testlog /tmp/logs/test_output.log -outputdir /tmp/logs
+      - run: 
+          command: |
+            gruntwork-install --binary-name 'terratest_log_parser' --repo 'https://github.com/gruntwork-io/terratest' --tag ${TERRATEST_VERSION} 
+            cp /usr/local/bin/terratest_log_parser ~/bin/
+      - run: ls -la ~/bin
+      - run: env | grep -e BUILDEVENT_APIKEY -e BUILDEVENT_CIRCLE_API_TOKEN
+      - persist_to_workspace:
+          root: ~/bin
+          paths:
+            - build_start
+            - buildevents
+            - terraform
+            - terratest_log_parser 
 
+  send_trace:
+    executor: linuxgo
+    steps:
+      - attach_workspace:
+          at: ~/bin
+      - run: buildevents watch $CIRCLE_WORKFLOW_ID
+
+  info:
+    executor: linuxgo
+    steps:
+      - attach_workspace:
+          at: ~/bin
+      - run: "env | grep PATH"
+      - run: ls -la ~/bin || true
+      - run: ls -la ~/.local/bin || true
+      - run: ls -la /usr/local/bin/
+
+  lint:
+    executor: linuxgo
+    working_directory: /home/circleci/go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
+    steps:
+      - checkout
+      - with_job_span:
+          steps:      
+            - run: buildevents cmd $CIRCLE_WORKFLOW_ID $STEP_SPAN_ID terraform-fmt -- terraform fmt -diff -check -recursive
+            - run: buildevents cmd $CIRCLE_WORKFLOW_ID $STEP_SPAN_ID terraform-validate -- terraform validate
+
+  lint2:
+    executor: linuxgo
+    working_directory: /home/circleci/go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
+    steps:
+      - checkout
+      - with_job_span:
+          steps:      
+            - run: buildevents cmd $CIRCLE_WORKFLOW_ID $STEP_SPAN_ID terraform-fmt -- terraform fmt -diff -check -recursive
+            - run: buildevents cmd $CIRCLE_WORKFLOW_ID $STEP_SPAN_ID terraform-validate -- terraform validate
+            - run: sleep 5
+
+  test:
+    executor: linuxgo
+    working_directory: /home/circleci/go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
+    steps:
+      - checkout
+      - run: mkdir -p /tmp/logs
+      - with_job_span:
+          steps:      
+            - run: cd tests ; buildevents cmd $CIRCLE_WORKFLOW_ID $STEP_SPAN_ID go-get -- go get -v -t -d ./...
+            - run: cd tests ; buildevents cmd $CIRCLE_WORKFLOW_ID $STEP_SPAN_ID terratest -- go test -v ./... | tee /tmp/logs/test_output.log
+            - run: cd tests ; terratest_log_parser -testlog /tmp/logs/test_output.log -outputdir /tmp/logs
       # Store test result and log artifacts for browsing purposes
       - store_artifacts:
           path: /tmp/logs
       - store_test_results:
           path: /tmp/logs
+
+
+workflows:
+  test-and-build:
+    jobs:
+      - setup
+      - info:
+          requires:
+            - setup
+      - lint:
+          requires:
+            - setup
+      - test:
+          requires:
+            - setup
+      - send_trace:
+          requires:
+            - setup
